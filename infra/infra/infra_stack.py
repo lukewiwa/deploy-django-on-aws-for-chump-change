@@ -1,6 +1,7 @@
 from aws_cdk import (
     Stack,
 )
+from aws_cdk import aws_apigatewayv2 as apigwv2
 from aws_cdk import (
     aws_ec2 as ec2,
 )
@@ -8,11 +9,9 @@ from aws_cdk import (
     aws_ecs as ecs,
 )
 from aws_cdk import (
-    aws_elasticloadbalancingv2 as elbv2,
-)
-from aws_cdk import (
     aws_rds as rds,
 )
+from aws_cdk.aws_apigatewayv2_integrations import HttpServiceDiscoveryIntegration
 from constructs import Construct
 
 
@@ -42,7 +41,7 @@ class InfraStack(Stack):
             cpu="512",
         )
         database.grant_connect(task.task_role)
-        container = task.add_container(
+        task.add_container(
             "WiwaDjangoApp",
             image=ecs.ContainerImage.from_asset("../src/"),
             environment={"DEBUG": "false"},
@@ -51,16 +50,19 @@ class InfraStack(Stack):
         service = ecs.FargateService(
             self, "WiwaService", task_definition=task, cluster=cluster
         )
-        lb = elbv2.ApplicationLoadBalancer(
-            self, "WiwaLB", vpc=vpc, internet_facing=True
+        cloudmap_namespace = cluster.add_default_cloud_map_namespace(
+            name="WiwaCloudMap"
         )
-        listener = lb.add_listener("Listener", port=80)
-        listener.add_targets(
-            "EcsDjangoContainer",
-            port=8000,
-            targets=[
-                service.load_balancer_target(container_name=container.container_name)
-            ],
+        service_endpoint = service.enable_cloud_map(
+            cloud_map_namespace=cloudmap_namespace
+        )
+        vpc_link = apigwv2.VpcLink(self, "VPCLink", vpc=vpc)
+        apigwv2.HttpApi(
+            self,
+            "HttpProxyPrivateApi",
+            default_integration=HttpServiceDiscoveryIntegration(
+                "DefaultIntegration", service_endpoint, vpc_link=vpc_link
+            ),
         )
 
         # WAF maybe
