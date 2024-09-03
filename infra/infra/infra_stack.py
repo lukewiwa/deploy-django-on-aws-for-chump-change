@@ -18,7 +18,22 @@ from constructs import Construct
 class InfraStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
-        vpc = ec2.Vpc(self, "Vpc", vpc_name="WiwaVpc")
+        vpc = ec2.Vpc(
+            self,
+            "Vpc",
+            vpc_name="WiwaVpc",
+            max_azs=1,
+            nat_gateways=0,
+            subnet_configuration=[
+                ec2.SubnetConfiguration(
+                    name="WiwaPublicSubnet", subnet_type=ec2.SubnetType.PUBLIC
+                ),
+                ec2.SubnetConfiguration(
+                    name="WiwaPrivateSubnet",
+                    subnet_type=ec2.SubnetType.PRIVATE_ISOLATED,
+                ),
+            ],
+        )
         database = rds.DatabaseInstance(
             self,
             "WiwaPostgresDatabase",
@@ -27,7 +42,7 @@ class InfraStack(Stack):
             ),
             vpc=vpc,
             vpc_subnets=ec2.SubnetSelection(
-                subnet_type=ec2.SubnetType.PRIVATE_WITH_NAT
+                subnet_type=ec2.SubnetType.PRIVATE_ISOLATED
             ),
         )
         cluster = ecs.Cluster(
@@ -58,6 +73,7 @@ class InfraStack(Stack):
                     capacity_provider="FARGATE_SPOT", base=1, weight=1
                 )
             ],
+            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
         )
         cloudmap_namespace = cluster.add_default_cloud_map_namespace(
             name="WiwaCloudMap"
@@ -65,7 +81,12 @@ class InfraStack(Stack):
         service_endpoint = service.enable_cloud_map(
             cloud_map_namespace=cloudmap_namespace
         )
-        vpc_link = apigwv2.VpcLink(self, "VPCLink", vpc=vpc)
+        vpc_link = apigwv2.VpcLink(
+            self,
+            "VPCLink",
+            vpc=vpc,
+            subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
+        )
         apigwv2.HttpApi(
             self,
             "HttpProxyPrivateApi",
