@@ -48,7 +48,16 @@ class InfraStack(Stack):
             port_mappings=[ecs.PortMapping(container_port=8000)],
         )
         service = ecs.FargateService(
-            self, "WiwaService", task_definition=task, cluster=cluster
+            self,
+            "WiwaService",
+            task_definition=task,
+            cluster=cluster,
+            desired_count=1,
+            capacity_provider_strategies=[
+                ecs.CapacityProviderStrategy(
+                    capacity_provider="FARGATE_SPOT", base=1, weight=1
+                )
+            ],
         )
         cloudmap_namespace = cluster.add_default_cloud_map_namespace(
             name="WiwaCloudMap"
