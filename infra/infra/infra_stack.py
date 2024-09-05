@@ -6,12 +6,14 @@ from aws_cdk import (
     aws_ec2 as ec2,
 )
 from aws_cdk import (
-    aws_ecs as ecs,
-)
-from aws_cdk import (
     aws_efs as efs,
 )
-from aws_cdk.aws_apigatewayv2_integrations import HttpServiceDiscoveryIntegration
+from aws_cdk import (
+    aws_lambda as lambda_,
+)
+from aws_cdk.aws_apigatewayv2_integrations import (
+    HttpLambdaIntegration,
+)
 from constructs import Construct
 
 
@@ -35,72 +37,32 @@ class InfraStack(Stack):
             ],
         )
 
-        cluster = ecs.Cluster(
-            self, "WiwaCluster", vpc=vpc, enable_fargate_capacity_providers=True
-        )
-        cloudmap_namespace = cluster.add_default_cloud_map_namespace(
-            name="WiwaCloudMap"
-        )
         app_persistent_file_system = efs.FileSystem(self, "AppFileSystem", vpc=vpc)
-        app_volume_definition = ecs.Volume(
-            name="WiwaAppVolume",
-            efs_volume_configuration=ecs.EfsVolumeConfiguration(
-                file_system_id=app_persistent_file_system.file_system_id
-            ),
+        access_point = app_persistent_file_system.add_access_point(
+            "AccessPoint",
+            path="/export/lambda",
+            create_acl=efs.Acl(owner_uid="1001", owner_gid="1001", permissions="750"),
+            posix_user=efs.PosixUser(uid="1001", gid="1001"),
         )
-        task = ecs.TaskDefinition(
+        function = lambda_.DockerImageFunction(
             self,
-            "WiwaTaskDefinition",
-            compatibility=ecs.Compatibility.FARGATE,
-            memory_mib="1024",
-            cpu="512",
-            volumes=[app_volume_definition],
-        )
-        container = task.add_container(
-            "WiwaDjangoApp",
-            image=ecs.ContainerImage.from_asset("../src/"),
+            "WiwaFunction",
+            code=lambda_.DockerImageCode.from_image_asset("../src"),
             environment={
                 "DEBUG": "false",
-                "DATABASE_URL": "sqlite:////tmp/sqlite.db",
+                "DATABASE_URL": "sqlite:////mnt/db/sqlite.db",
             },
-            port_mappings=[ecs.PortMapping(container_port=8000)],
-        )
-        container.add_mount_points(
-            ecs.MountPoint(
-                container_path="/tmp",
-                read_only=False,
-                source_volume=app_volume_definition.name,
-            )
-        )
-        service = ecs.FargateService(
-            self,
-            "WiwaService",
-            task_definition=task,
-            cluster=cluster,
-            desired_count=1,
-            capacity_provider_strategies=[
-                ecs.CapacityProviderStrategy(
-                    capacity_provider="FARGATE_SPOT", base=1, weight=1
-                )
-            ],
-            vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
-        )
-        service_endpoint = service.enable_cloud_map(
-            cloud_map_namespace=cloudmap_namespace, container=container
-        )
-        app_persistent_file_system.connections.allow_default_port_from(service)
-        vpc_link = apigwv2.VpcLink(
-            self,
-            "VPCLink",
             vpc=vpc,
-            subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
+            filesystem=lambda_.FileSystem.from_efs_access_point(
+                access_point, "/mnt/db"
+            ),
         )
+        integration = HttpLambdaIntegration("LambdaIntegration", function)
         apigwv2.HttpApi(
             self,
             "HttpProxyPrivateApi",
-            default_integration=HttpServiceDiscoveryIntegration(
-                "DefaultIntegration", service_endpoint, vpc_link=vpc_link
-            ),
+            default_integration=integration,
+            create_default_stage=True
         )
 
         # WAF maybe
