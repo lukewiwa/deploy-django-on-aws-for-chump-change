@@ -17,7 +17,8 @@ import environ
 env = environ.Env(
     DEBUG=(bool, False),
     ALLOWED_HOSTS=(list, []),
-    DATABASE_URL=(str)
+    DATABASE_URL=(str),
+    SQLITE_OBJECT_STORAGE_BUCKET_NAME=(str)
 )
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -85,6 +86,8 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {
     "default": {
         **env.db(),
+        "ENGINE": "django_sqlite_object_storage",
+        "SQLITE_OBJECT_STORAGE_BUCKET_NAME": env("SQLITE_OBJECT_STORAGE_BUCKET_NAME"),
     }
 }
 

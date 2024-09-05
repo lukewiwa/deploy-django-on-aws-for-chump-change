@@ -6,10 +6,10 @@ from aws_cdk import (
     aws_ec2 as ec2,
 )
 from aws_cdk import (
-    aws_efs as efs,
+    aws_lambda as lambda_,
 )
 from aws_cdk import (
-    aws_lambda as lambda_,
+    aws_s3 as s3,
 )
 from aws_cdk.aws_apigatewayv2_integrations import (
     HttpLambdaIntegration,
@@ -37,12 +37,8 @@ class InfraStack(Stack):
             ],
         )
 
-        app_persistent_file_system = efs.FileSystem(self, "AppFileSystem", vpc=vpc)
-        access_point = app_persistent_file_system.add_access_point(
-            "AccessPoint",
-            path="/export/lambda",
-            create_acl=efs.Acl(owner_uid="1001", owner_gid="1001", permissions="750"),
-            posix_user=efs.PosixUser(uid="1001", gid="1001"),
+        database_bucket = s3.Bucket(
+            self, "DatabaseBucket", block_public_access=s3.BlockPublicAccess.BLOCK_ALL
         )
         function = lambda_.DockerImageFunction(
             self,
@@ -50,19 +46,18 @@ class InfraStack(Stack):
             code=lambda_.DockerImageCode.from_image_asset("../src"),
             environment={
                 "DEBUG": "false",
-                "DATABASE_URL": "sqlite:////mnt/db/sqlite.db",
+                "DATABASE_URL": "sqlite:////tmp/sqlite.db",
+                "SQLITE_OBJECT_STORAGE_BUCKET_NAME": database_bucket.bucket_name,
             },
             vpc=vpc,
-            filesystem=lambda_.FileSystem.from_efs_access_point(
-                access_point, "/mnt/db"
-            ),
         )
+        database_bucket.grant_read_write(function)
         integration = HttpLambdaIntegration("LambdaIntegration", function)
         apigwv2.HttpApi(
             self,
             "HttpProxyPrivateApi",
             default_integration=integration,
-            create_default_stage=True
+            create_default_stage=True,
         )
 
         # WAF maybe
