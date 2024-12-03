@@ -16,6 +16,7 @@ import environ
 
 env = environ.Env(
     DEBUG=(bool, False),
+    SECRET_KEY=(str),
     ALLOWED_HOSTS=(list, []),
     DATABASE_URL=(str),
     SQLITE_OBJECT_STORAGE_BUCKET_NAME=(str)
@@ -29,7 +30,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-d0y-3%x3!g+)yha9e-$-7xv&19s=_j6bx_+pbzt3majlhnlch!"
+SECRET_KEY = env.str("SECRET_KEY")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = env.bool("DEBUG")
